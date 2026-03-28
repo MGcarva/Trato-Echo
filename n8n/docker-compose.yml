@@ -1,0 +1,96 @@
+version: "3.8"
+
+services:
+  # ─────────────────────────────
+  # n8n  (workflow automation)
+  # ─────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: trato_hecho_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    env_file:
+      - ../.env
+    environment:
+      # ── Auth ──────────────────────────────────────────────
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+
+      # ── URLs ──────────────────────────────────────────────
+      # In production, set WEBHOOK_URL to your public domain:
+      # e.g. https://n8n.tudominio.cl/
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+
+      # ── Timezone ─────────────────────────────────────────
+      - GENERIC_TIMEZONE=America/Santiago
+      - TZ=America/Santiago
+
+      # ── These come from env_file (../.env): ──────────────
+      # ANTHROPIC_API_KEY, MERCADOPAGO_ACCESS_TOKEN, FRONTEND_URL
+      # Uncomment below ONLY if NOT using env_file:
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - MERCADOPAGO_ACCESS_TOKEN=${MERCADOPAGO_ACCESS_TOKEN}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+      # ── Execution settings ───────────────────────────────
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+
+      # ── Security ─────────────────────────────────────────
+      - N8N_SECURE_COOKIE=false
+
+      # ── Allow workflows to read env vars ($env.*) ────────
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # Redis  (quote memory / TTL)
+  # ─────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: trato_hecho_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trato_hecho_net
+
+volumes:
+  n8n_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  trato_hecho_net:
+    driver: bridge

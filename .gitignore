@@ -1,0 +1,33 @@
+# Build output
+target/
+
+# H2 database files
+data/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.class
+
+# Maven wrapper
+!.mvn/wrapper/maven-wrapper.jar
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ── Secrets / env vars ────────────────────────────────────
+.env
+n8n/.env
+
+# ── Frontend ──────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# ── n8n ───────────────────────────────────────────────────
+n8n/data/
+
+# ── Claude / worktree metadata ────────────────────────────
+.claude/
