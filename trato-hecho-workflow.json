@@ -1,0 +1,833 @@
+{
+  "name": "Trato Hecho - Chat Agent",
+  "id": "8726be75-0ef1-4125-9c85-f97008eef9bb",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": false,
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "instanceId": "trato-hecho-instance"
+  },
+  "tags": [
+    {
+      "name": "trato-hecho"
+    },
+    {
+      "name": "chat-agent"
+    }
+  ],
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "4bdf114a-0bca-437e-8eee-8a0f59af2e72",
+      "name": "Webhook Chat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        400
+      ],
+      "webhookId": "a1f2e3d4-b5c6-7890-abcd-ef1234567890"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst body = raw.body || raw;\nconst uuid    = String(body.uuid    || '').trim();\nconst message = String(body.message || '').trim();\nif (!uuid)    throw new Error('uuid es requerido');\nif (!message) throw new Error('message es requerido');\nreturn [{ json: { uuid, message } }];"
+      },
+      "id": "0ca90f6a-f511-41a7-bf4c-ba7cd3306a0c",
+      "name": "Extraer Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=th:quote:{{ $json.uuid }}",
+        "propertyName": "value"
+      },
+      "id": "0d137eda-65ee-429d-acf4-056b686ffa2e",
+      "name": "Obtener Cotización Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        640,
+        400
+      ],
+      "credentials": {
+        "redis": {
+          "id": "dlDAEbv3seiyxAvV",
+          "name": "Redis - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=th:history:{{ $('Extraer Input').first().json.uuid }}",
+        "propertyName": "value"
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-111122223333",
+      "name": "Obtener Historial Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        860,
+        400
+      ],
+      "credentials": {
+        "redis": {
+          "id": "dlDAEbv3seiyxAvV",
+          "name": "Redis - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const extract      = $('Extraer Input').first().json;\nconst redisQuote   = $('Obtener Cotización Redis').first().json;\nconst redisHistory = $input.first().json;\nconst { uuid, message } = extract;\n\n// ── Historial ──\nlet history = [];\nif (redisHistory && redisHistory.value) {\n  try { history = JSON.parse(redisHistory.value); } catch(e) { history = []; }\n}\nhistory = history.slice(-30);\n\n// ── Cotización existente ──\nlet quoteContext = '';\nlet existingQuote = null;\nif (redisQuote && redisQuote.value) {\n  try {\n    existingQuote = JSON.parse(redisQuote.value);\n    quoteContext = '\\n\\n=== COTIZACIÓN ACTIVA DEL CLIENTE ===\\n'\n      + 'Número: ' + existingQuote.numero + '\\n'\n      + 'Teléfono: ' + (existingQuote.telefono || 'no registrado') + '\\n'\n      + 'Nombre: ' + (existingQuote.nombre || 'no registrado') + '\\n'\n      + 'Producto: ' + existingQuote.tipo + '\\n'\n      + 'M²: ' + existingQuote.m2 + ' m²\\n'\n      + 'Instalación: ' + (existingQuote.instalacion ? 'Sí' : 'No') + '\\n'\n      + 'Total: $' + Number(existingQuote.total).toLocaleString('es-CL') + ' CLP\\n'\n      + 'Fecha: ' + existingQuote.fecha + '\\n'\n      + '\\nEl cliente YA tiene cotización. Si quiere pagar, genera el link.\\n'\n      + 'Usa: [PAGAR: numero=' + existingQuote.numero + ', monto=' + existingQuote.total + ']';\n  } catch(e) { existingQuote = null; }\n}\n\nconst isFirstMessage = history.length === 0 && !existingQuote;\nconst hasHistory = history.length > 0;\n\nlet memoryRule = '';\nif (isFirstMessage) {\n  memoryRule = '- Es el PRIMER contacto. Saluda breve y pregunta el nombre: \"¡Hola! Soy Queno de Césped Sintético SpA 🌿 ¿Cómo te llamas?\" Espera que responda su nombre antes de seguir.';\n} else if (hasHistory) {\n  memoryRule = '- La conversación ya está en curso. PROHIBIDO saludar de nuevo. PROHIBIDO repetir preguntas ya respondidas. Continúa desde donde quedó.';\n}\nif (existingQuote) {\n  memoryRule += '\\n- El cliente ya tiene cotización guardada. Menciónala y pregunta si quiere pagar.';\n}\n\nconst systemPrompt = `Eres Queno, asesor virtual de Césped Sintético SpA de Melipilla, Chile.\n\nIDENTIDAD:\n- Experto en césped sintético, relajado pero profesional\n- Español chileno natural (\"bacán\", \"dale\", \"perfecto\", \"listo\")\n- CONCISO: respuestas cortas, máximo 3-4 líneas\n- Haces UNA pregunta a la vez\n\nNOMBRE DEL CLIENTE:\n- En el PRIMER mensaje SIEMPRE pregunta el nombre\n- Una vez que lo sepas, úsalo naturalmente (\"Dale Juan...\", \"Perfecto María\")\n- Si ya dijo su nombre en el historial, NO lo vuelvas a preguntar\n\nTELÉFONO DEL CLIENTE:\n- Después de saber el nombre, pregunta su número de teléfono de forma natural: \"¿Me das tu número de celular para guardarte la cotización?\"\n- El teléfono es OBLIGATORIO antes de cotizar. Sin teléfono NO generes cotización.\n- Si ya dio su teléfono en el historial, NO lo vuelvas a preguntar\n- Formato esperado: +56 9 XXXX XXXX o 9 XXXX XXXX\n\nCOTIZACIÓN EXISTENTE:\n- De forma natural pregunta si ya tiene una cotización realizada: \"¿Ya habías cotizado antes con nosotros o es primera vez?\"\n- Si dice que sí, pregúntale su número de teléfono para buscarla\n- Si ya tiene cotización en el sistema (ver abajo), menciónala directamente\n\nMEMORIA — REGLA CRÍTICA:\n${memoryRule}\n- Si el cliente ya dio tipo de espacio → NO lo vuelvas a preguntar\n- Si el cliente ya dio medidas → NO las vuelvas a pedir\n- Si el cliente ya eligió producto → NO ofrezcas opciones de nuevo\n- Si el cliente ya dio teléfono → NO lo vuelvas a pedir\n\nPRODUCTOS (CLP/m²):\n- Pasto Deportivo Pro 25mm: $12.000/m² (canchas)\n- Pasto Ornamental Básico 20mm: $8.500/m² (jardines)\n- Pasto Ornamental Premium 35mm: $15.000/m² (lujo)\n- Instalación profesional: +$4.500/m²\n\nCÁLCULO: m² = largo × ancho + 10% margen (redondear arriba)\n\nCOMPORTAMIENTO — MUESTRA PRECIOS SIEMPRE:\n1. Cuando tengas medidas Y tipo de espacio → calcula m² con margen, recomienda producto Y muestra precio total INMEDIATAMENTE\n2. Pregunta si quiere instalación ($4.500/m² extra)\n3. Cuando tengas todo (m², producto, instalación, nombre, teléfono) → muestra resumen con TOTAL y pregunta si confirma\n4. Si confirma → genera cotización con [COTIZAR: ...]\n5. Si quiere pagar cotización existente → genera pago con [PAGAR: ...]\n\nFLUJO DE COMPRA — DESPUÉS DE PAGAR:\n- Cuando el cliente confirme que pagó o quiera comprar, pídele:\n  1. Nombre completo (si no lo tienes ya)\n  2. Dirección de entrega completa (calle, número, comuna, ciudad)\n  3. Que envíe una foto/captura del comprobante de pago\n- Cuando tengas nombre completo + dirección + confirmación de comprobante → genera la venta con [VENTA: ...]\n- Informa que el plazo de entrega es de **5 días hábiles** desde la confirmación del pago\n- Ejemplo: \"Bacán [nombre], tu pedido queda registrado. Te entregamos en máximo 5 días hábiles en [dirección]. ¡Gracias por tu compra! 🌿\"\n\nEjemplo de cálculo:\n\"Cancha 50×40m = 2.000m² + 10% = 2.200m² de Deportivo Pro a $12.000/m² = $26.400.000 CLP. ¿Te sumo instalación por $9.900.000?\"\n\nMARCADORES (SOLO con TODOS los datos confirmados):\n[COTIZAR: m2=XX.XX, tipo=NOMBRE, instalacion=SI/NO, total=MONTO, telefono=TELEFONO, nombre=NOMBRE_CLIENTE]\n[PAGAR: numero=COT-XXXX-XXX, monto=MONTO]\n[VENTA: numero=COT-XXXX-XXX, nombreCompleto=NOMBRE, direccion=DIRECCION, telefono=TELEFONO, monto=MONTO]\n${quoteContext}`;\n\nconst messages = [...history, { role: 'user', content: message }];\nreturn [{ json: { uuid, systemPrompt, messages, existingQuote, history, message } }];"
+      },
+      "id": "ec83745d-155b-410b-922c-487c976d4c48",
+      "name": "Construir Prompt Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, system: $json.systemPrompt, messages: $json.messages }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "67dd2c24-ed10-48ff-b330-d4b91ea2afad",
+      "name": "Llamar Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResp = $input.first().json;\nconst prevData = $('Construir Prompt Claude').first().json;\nconst { uuid, existingQuote, history, message } = prevData;\n\nlet rawText = '';\nif (claudeResp.content && claudeResp.content[0]) {\n  rawText = claudeResp.content[0].text || '';\n}\n\nconst cotizarRegex = /\\[COTIZAR:\\s*m2=([\\d.]+),\\s*tipo=([^,]+),\\s*instalacion=(SI|NO),\\s*total=(\\d+),\\s*telefono=([^,]+),\\s*nombre=([^\\]]+)\\]/i;\nconst pagarRegex   = /\\[PAGAR:\\s*numero=([^,]+),\\s*monto=(\\d+)\\]/i;\nconst ventaRegex   = /\\[VENTA:\\s*numero=([^,]+),\\s*nombreCompleto=([^,]+),\\s*direccion=(.+?),\\s*telefono=([^,]+),\\s*monto=(\\d+)\\]/i;\n\nconst cotizarMatch = rawText.match(cotizarRegex);\nconst pagarMatch   = rawText.match(pagarRegex);\nconst ventaMatch   = rawText.match(ventaRegex);\n\nconst cleanText = rawText\n  .replace(cotizarRegex, '')\n  .replace(pagarRegex, '')\n  .replace(ventaRegex, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nlet action = 'NONE';\nlet actionData = null;\n\nif (cotizarMatch) {\n  action = 'COTIZAR';\n  actionData = {\n    m2: parseFloat(cotizarMatch[1]),\n    tipo: cotizarMatch[2].trim(),\n    instalacion: cotizarMatch[3].toUpperCase() === 'SI',\n    total: parseInt(cotizarMatch[4], 10),\n    telefono: cotizarMatch[5].trim(),\n    nombre: cotizarMatch[6].trim()\n  };\n} else if (ventaMatch) {\n  action = 'VENTA';\n  actionData = {\n    numero: ventaMatch[1].trim(),\n    nombreCompleto: ventaMatch[2].trim(),\n    direccion: ventaMatch[3].trim(),\n    telefono: ventaMatch[4].trim(),\n    monto: parseInt(ventaMatch[5], 10)\n  };\n} else if (pagarMatch) {\n  action = 'PAGAR';\n  actionData = {\n    numero: pagarMatch[1].trim(),\n    monto: parseInt(pagarMatch[2], 10)\n  };\n}\n\nconst updatedHistory = [\n  ...history,\n  { role: 'user', content: message },\n  { role: 'assistant', content: cleanText }\n].slice(-40);\n\nreturn [{ json: { uuid, cleanText, action, actionData, existingQuote, updatedHistory } }];"
+      },
+      "id": "dee445cd-a3fc-48a2-91a8-10e1c4c3b5c8",
+      "name": "Parsear Respuesta Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=th:history:{{ $json.uuid }}",
+        "value": "={{ JSON.stringify($json.updatedHistory) }}",
+        "expire": true,
+        "ttl": 864000
+      },
+      "id": "b1c2d3e4-f5a6-7890-bcde-222233334444",
+      "name": "Guardar Historial Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        400
+      ],
+      "credentials": {
+        "redis": {
+          "id": "dlDAEbv3seiyxAvV",
+          "name": "Redis - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parsear Respuesta Claude').first().json.action }}",
+                    "rightValue": "COTIZAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "COTIZAR"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parsear Respuesta Claude').first().json.action }}",
+                    "rightValue": "PAGAR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "PAGAR"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Parsear Respuesta Claude').first().json.action }}",
+                    "rightValue": "VENTA",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "VENTA"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "5175e91c-6d37-47e9-93b9-61b9cf3265fe",
+      "name": "Switch Acción",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1960,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "th:counter"
+      },
+      "id": "f5dd1c36-1d67-4944-a4ec-c07cf8562ad4",
+      "name": "Incrementar Contador",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2180,
+        100
+      ],
+      "credentials": {
+        "redis": {
+          "id": "dlDAEbv3seiyxAvV",
+          "name": "Redis - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseData  = $('Parsear Respuesta Claude').first().json;\nconst counterVal = $input.first().json.value;\nconst { uuid, cleanText, actionData } = parseData;\n\nconst year = new Date().getFullYear();\nconst seq  = String(counterVal || 1).padStart(3, '0');\nconst numero = 'COT-' + year + '-' + seq;\n\nconst quote = {\n  numero, uuid,\n  m2: actionData.m2, tipo: actionData.tipo,\n  instalacion: actionData.instalacion, total: actionData.total,\n  telefono: actionData.telefono || '',\n  nombre: actionData.nombre || '',\n  fecha: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }),\n  timestamp: Date.now(),\n  estado: 'cotizado'\n};\n\nconst msgInstalacion = quote.instalacion ? '\\n🔧 Instalación incluida' : '';\nconst msgFinal = cleanText\n  + '\\n\\n✅ ¡Cotización generada! Te la guardo por 10 días.\\n\\n'\n  + '📋 Número: **' + quote.numero + '**\\n'\n  + '👤 Cliente: ' + quote.nombre + '\\n'\n  + '📱 Teléfono: ' + quote.telefono + '\\n'\n  + '📐 Metros cuadrados: ' + quote.m2 + ' m²\\n'\n  + '🌿 Producto: ' + quote.tipo + msgInstalacion\n  + '\\n💰 Total: $' + quote.total.toLocaleString('es-CL') + ' CLP\\n\\n'\n  + '¿Quieres que te genere el link de pago de MercadoPago?';\n\nreturn [{ json: { uuid, quote, message: msgFinal } }];"
+      },
+      "id": "acb7b66d-ea24-44fd-a59c-218afef63d00",
+      "name": "Crear Cotización",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=th:quote:{{ $json.uuid }}",
+        "value": "={{ JSON.stringify($json.quote) }}",
+        "expire": true,
+        "ttl": 864000
+      },
+      "id": "2159c742-6997-4909-bb76-108536ce4e51",
+      "name": "Guardar Cotización Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        2620,
+        100
+      ],
+      "credentials": {
+        "redis": {
+          "id": "dlDAEbv3seiyxAvV",
+          "name": "Redis - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mongo-api:3100/cotizaciones",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.quote) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "mongo-save-quote-001",
+      "name": "Mongo Guardar Cotización",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2840,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const quoteData = $('Crear Cotización').first().json;\nreturn [{ json: { message: quoteData.message, quote: quoteData.quote, paymentLink: null } }];"
+      },
+      "id": "04f84a42-0447-4923-a331-6ed794cef9cf",
+      "name": "Respuesta Cotización",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3060,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mercadopago.com/checkout/preferences",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MERCADOPAGO_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ items: [{ id: $json.actionData.numero, title: 'Césped Sintético SpA - ' + $json.actionData.numero, description: $json.existingQuote ? ($json.existingQuote.m2 + ' m² de ' + $json.existingQuote.tipo) : 'Pasto Sintético', quantity: 1, currency_id: 'CLP', unit_price: $json.actionData.monto }], external_reference: $json.actionData.numero, back_urls: { success: $env.FRONTEND_URL + '?pago=ok', failure: $env.FRONTEND_URL + '?pago=error', pending: $env.FRONTEND_URL + '?pago=pendiente' }, auto_return: 'approved', statement_descriptor: 'CESPED SINTETICO SPA' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "cb779899-409e-4dc9-9960-c7fef45d4f82",
+      "name": "Llamar MercadoPago",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2180,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const mpResp = $input.first().json;\nconst parseData = $('Parsear Respuesta Claude').first().json;\nconst paymentLink = mpResp.init_point || mpResp.sandbox_init_point || null;\nconst message = parseData.cleanText + (paymentLink\n  ? '\\n\\n💳 Aquí está tu link de pago para **' + parseData.actionData.numero + '**:\\n\\n' + paymentLink + '\\n\\nPaga seguro con MercadoPago.'\n  : '\\n\\nHubo un problema con el link de pago. Contáctanos directamente.');\nreturn [{ json: { message, quote: parseData.existingQuote || null, paymentLink } }];"
+      },
+      "id": "15f1b067-297e-466f-b935-70b56a478db3",
+      "name": "Respuesta Pago",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseData = $('Parsear Respuesta Claude').first().json;\nconst { uuid, cleanText, actionData, existingQuote } = parseData;\n\nconst now = new Date();\nconst entrega = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);\nconst fechaEntrega = entrega.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });\n\nconst venta = {\n  numeroCotizacion: actionData.numero,\n  uuid,\n  nombreCompleto: actionData.nombreCompleto,\n  direccion: actionData.direccion,\n  telefono: actionData.telefono,\n  monto: actionData.monto,\n  producto: existingQuote ? existingQuote.tipo : '',\n  m2: existingQuote ? existingQuote.m2 : 0,\n  instalacion: existingQuote ? existingQuote.instalacion : false,\n  fechaVenta: now.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }),\n  fechaEntregaEstimada: fechaEntrega,\n  estado: 'pagado',\n  timestamp: Date.now()\n};\n\nconst msgFinal = cleanText\n  + '\\n\\n🎉 ¡Venta registrada!\\n\\n'\n  + '📋 Cotización: **' + venta.numeroCotizacion + '**\\n'\n  + '👤 Cliente: ' + venta.nombreCompleto + '\\n'\n  + '📱 Teléfono: ' + venta.telefono + '\\n'\n  + '📍 Dirección: ' + venta.direccion + '\\n'\n  + '💰 Monto: $' + venta.monto.toLocaleString('es-CL') + ' CLP\\n'\n  + '📦 Entrega estimada: **' + fechaEntrega + '** (5 días hábiles)\\n\\n'\n  + '¡Gracias por tu compra! 🌿';\n\nreturn [{ json: { uuid, venta, message: msgFinal } }];"
+      },
+      "id": "venta-code-001",
+      "name": "Crear Venta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mongo-api:3100/ventas",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.venta) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "mongo-save-venta-001",
+      "name": "Mongo Guardar Venta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2400,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ventaData = $('Crear Venta').first().json;\nreturn [{ json: { message: ventaData.message, venta: ventaData.venta, paymentLink: null } }];"
+      },
+      "id": "resp-venta-001",
+      "name": "Respuesta Venta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2620,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const parseData = $('Parsear Respuesta Claude').first().json;\nreturn [{ json: { message: parseData.cleanText, quote: parseData.existingQuote || null, paymentLink: null } }];"
+      },
+      "id": "f1894916-3b80-410c-849f-ece1a5eb40c2",
+      "name": "Respuesta Simple",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2180,
+        850
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "64d1a889-080d-45cd-b7bf-af6094bc6c9a",
+      "name": "Responder Webhook (Cotizar)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        3280,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5d22ed31-a01b-4829-8e53-f85606b82966",
+      "name": "Responder Webhook (Pagar)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2620,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-webhook-venta-001",
+      "name": "Responder Webhook (Venta)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2840,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "8f00e480-ead8-4b63-a3c9-5c11ec44b82f",
+      "name": "Responder Webhook (Simple)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        850
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Chat": {
+      "main": [
+        [
+          {
+            "node": "Extraer Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Input": {
+      "main": [
+        [
+          {
+            "node": "Obtener Cotización Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Cotización Redis": {
+      "main": [
+        [
+          {
+            "node": "Obtener Historial Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Historial Redis": {
+      "main": [
+        [
+          {
+            "node": "Construir Prompt Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir Prompt Claude": {
+      "main": [
+        [
+          {
+            "node": "Llamar Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parsear Respuesta Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Respuesta Claude": {
+      "main": [
+        [
+          {
+            "node": "Guardar Historial Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Historial Redis": {
+      "main": [
+        [
+          {
+            "node": "Switch Acción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Acción": {
+      "main": [
+        [
+          {
+            "node": "Incrementar Contador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Llamar MercadoPago",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Crear Venta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respuesta Simple",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incrementar Contador": {
+      "main": [
+        [
+          {
+            "node": "Crear Cotización",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Cotización": {
+      "main": [
+        [
+          {
+            "node": "Guardar Cotización Redis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Cotización Redis": {
+      "main": [
+        [
+          {
+            "node": "Mongo Guardar Cotización",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mongo Guardar Cotización": {
+      "main": [
+        [
+          {
+            "node": "Respuesta Cotización",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta Cotización": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook (Cotizar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar MercadoPago": {
+      "main": [
+        [
+          {
+            "node": "Respuesta Pago",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta Pago": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook (Pagar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Venta": {
+      "main": [
+        [
+          {
+            "node": "Mongo Guardar Venta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mongo Guardar Venta": {
+      "main": [
+        [
+          {
+            "node": "Respuesta Venta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta Venta": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook (Venta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta Simple": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook (Simple)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,128 @@
+version: "3.8"
+
+services:
+  # ─────────────────────────────
+  # n8n  (workflow automation)
+  # ─────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: cesped_n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"   # 127.0.0.1 evita el error de permisos en Windows
+    env_file:
+      - .env
+    environment:
+      # ── Auth ──────────────────────────────────────────────
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+
+      # ── URLs ──────────────────────────────────────────────
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+
+      # ── Timezone ─────────────────────────────────────────
+      - GENERIC_TIMEZONE=America/Santiago
+      - TZ=America/Santiago
+
+      # ── Env vars desde .env ──────────────────────────────
+      # ANTHROPIC_API_KEY y MERCADOPAGO_ACCESS_TOKEN vienen del env_file (.env)
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGO_URL=mongodb://mongo:27017/tratohecho
+
+      # ── Execution settings ───────────────────────────────
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+
+      # ── Security ─────────────────────────────────────────
+      - N8N_SECURE_COOKIE=false
+
+      # ── Permite que workflows lean variables de entorno ──
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # Redis  (memoria de sesiones)
+  # ─────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cesped_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # MongoDB  (cotizaciones y ventas)
+  # ─────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: cesped_mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # Mongo API  (REST bridge para n8n)
+  # ─────────────────────────────
+  mongo-api:
+    build: ./mongo-api
+    container_name: cesped_mongo_api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - trato_hecho_net
+
+volumes:
+  n8n_data:
+    driver: local
+  redis_data:
+    driver: local
+  mongo_data:
+    driver: local
+
+networks:
+  trato_hecho_net:
+    driver: bridge

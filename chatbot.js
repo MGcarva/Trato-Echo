@@ -102,19 +102,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const loaderId = addLoader();
 
         try {
-            // URL COMPLETA DE TU WEBHOOK (Cambia solo si reinicias ngrok)
-            const response = await fetch('https://marhta-unstubborn-minnie.ngrok-free.dev/webhook/8ba2c0b4-bb98-4437-b34d-4da692c16ed7', {
+            // Webhook de n8n — workflow "Trato Hecho - Chat Agent"
+            const response = await fetch('http://127.0.0.1:5678/webhook/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    chatInput: message,
-                    sessionId: sessionId,
-                    action: "sendMessage"
+                    uuid: sessionId,
+                    message: message,
+                    history: []
                 })
             });
 
             const data = await response.json();
-            
+
             const loaderEl = document.getElementById(loaderId);
             if (loaderEl) {
                 loaderEl.remove();
@@ -133,13 +133,13 @@ document.addEventListener('DOMContentLoaded', () => {
             addMessage(botReply, false);
 
         } catch (error) {
-            console.error("Error connecting to n8n:", error);
+            console.error("Error connecting to n8n:", error.name, error.message, error);
             const loaderEl = document.getElementById(loaderId);
             if (loaderEl) {
                 loaderEl.remove();
                 saveChatHistory();
             }
-            addMessage("No pude conectar con el servidor. Revisa que ngrok y n8n estén activos.", false);
+            addMessage(`Error: ${error.message || "No pude conectar con el servidor."}`, false);
         } finally {
             chatInput.disabled = false;
             chatInput.focus();

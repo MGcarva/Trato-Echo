@@ -1,0 +1,149 @@
+services:
+  # ─────────────────────────────
+  # Nginx  (reverse proxy + SSL)
+  # ─────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: cesped_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - certbot_data:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - n8n
+      - mongo-api
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # Certbot  (SSL automático)
+  # ─────────────────────────────
+  certbot:
+    image: certbot/certbot
+    container_name: cesped_certbot
+    volumes:
+      - certbot_data:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  # ─────────────────────────────
+  # n8n  (workflow automation)
+  # ─────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: cesped_n8n
+    restart: unless-stopped
+    # NO exponemos puerto al host — Nginx hace proxy
+    env_file:
+      - .env
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - WEBHOOK_URL=${WEBHOOK_URL:-https://api.tudominio.cl/}
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - GENERIC_TIMEZONE=America/Santiago
+      - TZ=America/Santiago
+      - FRONTEND_URL=${FRONTEND_URL:-https://www.tudominio.cl}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGO_URL=mongodb://mongo:27017/tratohecho
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - N8N_SECURE_COOKIE=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_CONCURRENCY_PRODUCTION_LIMIT=20
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # Redis
+  # ─────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cesped_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-cambiaesto123}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-cambiaesto123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # MongoDB
+  # ─────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: cesped_mongo
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-cambiaesto123}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "-u", "${MONGO_USER:-admin}", "-p", "${MONGO_PASSWORD:-cambiaesto123}", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trato_hecho_net
+
+  # ─────────────────────────────
+  # Mongo API
+  # ─────────────────────────────
+  mongo-api:
+    build: ./mongo-api
+    container_name: cesped_mongo_api
+    restart: unless-stopped
+    environment:
+      - MONGO_URL=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-cambiaesto123}@mongo:27017/?authSource=admin
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - trato_hecho_net
+
+volumes:
+  n8n_data:
+    driver: local
+  redis_data:
+    driver: local
+  mongo_data:
+    driver: local
+  certbot_data:
+    driver: local
+  certbot_www:
+    driver: local
+
+networks:
+  trato_hecho_net:
+    driver: bridge

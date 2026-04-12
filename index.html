@@ -592,18 +592,18 @@
 
     <!-- Script Menú Móvil -->
     <script>
-        (function () {
-            const btn = document.getElementById('mobile-menu-btn');
-            const menu = document.getElementById('mobile-menu');
-            const icon = document.getElementById('mobile-menu-icon');
-            if (btn && menu) {
-                btn.addEventListener('click', () => {
-                    const isOpen = !menu.classList.contains('hidden');
-                    menu.classList.toggle('hidden', isOpen);
-                    icon.textContent = isOpen ? 'menu' : 'close';
-                });
-            }
-        })();
+            (function () {
+                const btn = document.getElementById('mobile-menu-btn');
+                const menu = document.getElementById('mobile-menu');
+                const icon = document.getElementById('mobile-menu-icon');
+                if (btn && menu) {
+                    btn.addEventListener('click', () => {
+                        const isOpen = !menu.classList.contains('hidden');
+                        menu.classList.toggle('hidden', isOpen);
+                        icon.textContent = isOpen ? 'menu' : 'close';
+                    });
+                }
+            })();
     </script>
 
     <script>
@@ -713,14 +713,15 @@
                 try {
                     // URL COMPLETA DE TU WEBHOOK (Cambia solo si reinicias ngrok)
                     // CAMBIO: Ahora apuntamos a tu n8n LOCAL en lugar del Cloud
-                    const response = await fetch('http://localhost:5678/webhook-test/chat-don-queno', {
+                    const response = await fetch('http://127.0.0.1:5678/webhook/chat', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            message: message, // El texto que viene del input
-                            sessionId: 'sesion-local-001' // ID para tu MongoDB
+                            uuid: sessionId,
+                            message: message,
+                            history: []
                         })
                     });
 
@@ -736,9 +737,9 @@
                     let botReply = "Lo siento, hubo un problema al procesar la respuesta.";
 
                     if (Array.isArray(data)) {
-                        botReply = data[0].output || data[0].text || botReply;
+                        botReply = data[0].message || data[0].output || data[0].text || botReply;
                     } else {
-                        botReply = data.output || data.text || data.message || botReply;
+                        botReply = data.message || data.output || data.text || botReply;
                     }
 
                     addMessage(botReply, false);
@@ -750,7 +751,7 @@
                         loaderEl.remove();
                         saveChatHistory();
                     }
-                    addMessage("No pude conectar con el servidor. Revisa que ngrok y n8n estén activos.", false);
+                    addMessage("No pude conectar con el servidor.", false);
                 } finally {
                     chatInput.disabled = false;
                     chatInput.focus();
