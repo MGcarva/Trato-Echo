@@ -1,5 +1,10 @@
 {
+  "updatedAt": "2026-04-18T14:36:36.000Z",
+  "createdAt": "2026-03-28T14:34:58.724Z",
   "name": "Trato Hecho - Chat Agent",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -22,7 +27,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Extraer y validar payload ──────────────────────\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst uuid    = String(body.uuid    || '').trim();\nconst message = String(body.message || '').trim();\nconst history = Array.isArray(body.history) ? body.history : [];\n\nif (!uuid)    throw new Error('uuid es requerido');\nif (!message) throw new Error('message es requerido');\n\n// Limitar historial a últimos 20 mensajes para no exceder tokens\nconst trimmedHistory = history.slice(-20);\n\nreturn [{ json: { uuid, message, history: trimmedHistory } }];"
+        "jsCode": "// â”€â”€ Extraer y validar payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst uuid    = String(body.uuid    || '').trim();\nconst message = String(body.message || '').trim();\nconst history = Array.isArray(body.history) ? body.history : [];\n\nif (!uuid)    throw new Error('uuid es requerido');\nif (!message) throw new Error('message es requerido');\n\n// Limitar historial a Ãºltimos 20 mensajes para no exceder tokens\nconst trimmedHistory = history.slice(-20);\n\nreturn [{ json: { uuid, message, history: trimmedHistory } }];"
       },
       "id": "0ca90f6a-f511-41a7-bf4c-ba7cd3306a0c",
       "name": "Extraer Input",
@@ -39,7 +44,7 @@
         "key": "=th:quote:{{ $json.uuid }}"
       },
       "id": "0d137eda-65ee-429d-acf4-056b686ffa2e",
-      "name": "Obtener Cotización Redis",
+      "name": "Obtener CotizaciÃ³n Redis",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
@@ -48,14 +53,14 @@
       ],
       "credentials": {
         "redis": {
-          "id": "REDIS_CREDENTIAL_ID",
+          "id": "1B4cJUL85vbG4mJH",
           "name": "Redis - Trato Hecho"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// ── Construir prompt para Claude ────────────────────\nconst extract = $('Extraer Input').first().json;\nconst redisResult = $input.first().json;\n\nconst { uuid, message, history } = extract;\n\n// Parsear cotización guardada (si existe)\nlet quoteContext = '';\nlet existingQuote = null;\n\nif (redisResult && redisResult.value) {\n  try {\n    existingQuote = JSON.parse(redisResult.value);\n    quoteContext = `\n\n=== COTIZACIÓN ACTIVA DEL CLIENTE ===\nNúmero: ${existingQuote.numero}\nProducto: ${existingQuote.tipo}\nM²: ${existingQuote.m2} m²\nInstalación: ${existingQuote.instalacion ? 'Sí' : 'No'}\nTotal: $${Number(existingQuote.total).toLocaleString('es-CL')} CLP\nFecha: ${existingQuote.fecha}\n\nSi el cliente menciona su cotización o quiere pagar, usa estos datos.`;\n  } catch(e) {\n    existingQuote = null;\n  }\n}\n\n// ── Sistema de precios (actualizar según negocio) ──\nconst systemPrompt = `Eres el asistente virtual de cotizaciones de Césped Sintético SpA, empresa de Melipilla, Chile.\n\nTU MISIÓN:\n1. Guiar al cliente para medir su espacio correctamente\n2. Calcular los metros cuadrados necesarios\n3. Ofrecer el producto más adecuado\n4. Generar una cotización con número único\n5. Crear un link de pago cuando el cliente esté listo\n\nCATÁLOGO DE PRODUCTOS Y PRECIOS (CLP por m²):\n- Pasto Deportivo (fibra 25mm): $12.000/m²  → canchas de fútbol, multideporte\n- Pasto Ornamental Básico (fibra 20mm): $8.500/m²  → jardines, terrazas, balcones\n- Pasto Ornamental Premium (fibra 35mm): $15.000/m²  → jardines de lujo\n- Instalación (servicio adicional): $4.500/m²\n\nCÓMO CALCULAR METRAJE:\n- Rectangular: largo (m) × ancho (m) = m²\n- Espacio irregular: dividir en rectángulos y sumar\n- SIEMPRE agregar 10% de margen por cortes (redondear hacia arriba)\n- Ejemplo: jardín 5×3m = 15 m² → con margen: 16.5 m² → pedir 17 m²\n\nFLUJO OBLIGATORIO:\n1. Saluda amablemente\n2. Pregunta el tipo de espacio (jardín, cancha, terraza, etc.)\n3. Pide las medidas: largo y ancho\n4. Calcula m² con margen y explica el cálculo\n5. Recomienda el producto según el uso\n6. Pregunta si necesita instalación\n7. Calcula el total (m² × precio + instalación si aplica)\n8. Confirma los datos con el cliente\n9. Genera la cotización\n\nCUANDO TENGAS m², TIPO Y DECISIÓN DE INSTALACIÓN:\nIncluye EXACTAMENTE esta línea al final de tu respuesta (sin cambiar formato):\n[COTIZAR: m2=XX.XX, tipo=NOMBRE_PRODUCTO, instalacion=SI/NO, total=MONTO_SIN_PUNTOS]\n\nEjemplo: [COTIZAR: m2=17.00, tipo=Pasto Ornamental Básico, instalacion=SI, total=220500]\n\nCUANDO EL CLIENTE CONFIRME QUE QUIERE PAGAR:\nIncluye EXACTAMENTE esta línea al final de tu respuesta:\n[PAGAR: numero=COT-XXXX-XXX, monto=MONTO_SIN_PUNTOS]\n\nREGLAS IMPORTANTES:\n- Habla en español chileno, amable y directo\n- Nunca inventes precios fuera del catálogo\n- Si el cliente ya tiene cotización activa, confirma sus datos antes de generar otra\n- Sé conciso pero completo\n- No incluyas los marcadores [COTIZAR:] o [PAGAR:] a menos que tengas TODOS los datos${quoteContext}`;\n\n// Armar mensajes para Claude\nconst messages = [\n  ...history,\n  { role: 'user', content: message }\n];\n\nreturn [{ json: { uuid, systemPrompt, messages, existingQuote } }];"
+        "jsCode": "// â”€â”€ Construir prompt para Claude â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst extract = $('Extraer Input').first().json;\nconst redisResult = $input.first().json;\n\nconst { uuid, message, history } = extract;\n\n// Parsear cotizaciÃ³n guardada (si existe)\nlet quoteContext = '';\nlet existingQuote = null;\n\nif (redisResult && redisResult.value) {\n  try {\n    existingQuote = JSON.parse(redisResult.value);\n    quoteContext = `\n\n=== COTIZACIÃ“N ACTIVA DEL CLIENTE ===\nNÃºmero: ${existingQuote.numero}\nProducto: ${existingQuote.tipo}\nMÂ²: ${existingQuote.m2} mÂ²\nInstalaciÃ³n: ${existingQuote.instalacion ? 'SÃ­' : 'No'}\nTotal: $${Number(existingQuote.total).toLocaleString('es-CL')} CLP\nFecha: ${existingQuote.fecha}\n\nSi el cliente menciona su cotizaciÃ³n o quiere pagar, usa estos datos.`;\n  } catch(e) {\n    existingQuote = null;\n  }\n}\n\n// â”€â”€ Sistema de precios (actualizar segÃºn negocio) â”€â”€\nconst systemPrompt = `Eres el asistente virtual de cotizaciones de CÃ©sped SintÃ©tico SpA, empresa de Melipilla, Chile.\n\nTU MISIÃ“N:\n1. Guiar al cliente para medir su espacio correctamente\n2. Calcular los metros cuadrados necesarios\n3. Ofrecer el producto mÃ¡s adecuado\n4. Generar una cotizaciÃ³n con nÃºmero Ãºnico\n5. Crear un link de pago cuando el cliente estÃ© listo\n\nCATÃLOGO DE PRODUCTOS Y PRECIOS (CLP por mÂ²):\n- Pasto Deportivo (fibra 25mm): $12.000/mÂ²  â†’ canchas de fÃºtbol, multideporte\n- Pasto Ornamental BÃ¡sico (fibra 20mm): $8.500/mÂ²  â†’ jardines, terrazas, balcones\n- Pasto Ornamental Premium (fibra 35mm): $15.000/mÂ²  â†’ jardines de lujo\n- InstalaciÃ³n (servicio adicional): $4.500/mÂ²\n\nCÃ“MO CALCULAR METRAJE:\n- Rectangular: largo (m) Ã— ancho (m) = mÂ²\n- Espacio irregular: dividir en rectÃ¡ngulos y sumar\n- SIEMPRE agregar 10% de margen por cortes (redondear hacia arriba)\n- Ejemplo: jardÃ­n 5Ã—3m = 15 mÂ² â†’ con margen: 16.5 mÂ² â†’ pedir 17 mÂ²\n\nFLUJO OBLIGATORIO:\n1. Saluda amablemente\n2. Pregunta el tipo de espacio (jardÃ­n, cancha, terraza, etc.)\n3. Pide las medidas: largo y ancho\n4. Calcula mÂ² con margen y explica el cÃ¡lculo\n5. Recomienda el producto segÃºn el uso\n6. Pregunta si necesita instalaciÃ³n\n7. Calcula el total (mÂ² Ã— precio + instalaciÃ³n si aplica)\n8. Confirma los datos con el cliente\n9. Genera la cotizaciÃ³n\n\nCUANDO TENGAS mÂ², TIPO Y DECISIÃ“N DE INSTALACIÃ“N:\nIncluye EXACTAMENTE esta lÃ­nea al final de tu respuesta (sin cambiar formato):\n[COTIZAR: m2=XX.XX, tipo=NOMBRE_PRODUCTO, instalacion=SI/NO, total=MONTO_SIN_PUNTOS]\n\nEjemplo: [COTIZAR: m2=17.00, tipo=Pasto Ornamental BÃ¡sico, instalacion=SI, total=220500]\n\nCUANDO EL CLIENTE CONFIRME QUE QUIERE PAGAR:\nIncluye EXACTAMENTE esta lÃ­nea al final de tu respuesta:\n[PAGAR: numero=COT-XXXX-XXX, monto=MONTO_SIN_PUNTOS]\n\nREGLAS IMPORTANTES:\n- Habla en espaÃ±ol chileno, amable y directo\n- Nunca inventes precios fuera del catÃ¡logo\n- Si el cliente ya tiene cotizaciÃ³n activa, confirma sus datos antes de generar otra\n- SÃ© conciso pero completo\n- No incluyas los marcadores [COTIZAR:] o [PAGAR:] a menos que tengas TODOS los datos${quoteContext}`;\n\n// Armar mensajes para Claude\nconst messages = [\n  ...history,\n  { role: 'user', content: message }\n];\n\nreturn [{ json: { uuid, systemPrompt, messages, existingQuote } }];"
       },
       "id": "ec83745d-155b-410b-922c-487c976d4c48",
       "name": "Construir Prompt Claude",
@@ -105,7 +110,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Parsear respuesta de Claude ──────────────────────\nconst claudeResp = $input.first().json;\nconst prevData = $('Construir Prompt Claude').first().json;\n\nconst { uuid, existingQuote } = prevData;\n\n// Extraer texto de la respuesta\nlet rawText = '';\nif (claudeResp.content && claudeResp.content[0]) {\n  rawText = claudeResp.content[0].text || '';\n}\n\n// Detectar marcadores especiales\nconst cotizarRegex = /\\[COTIZAR:\\s*m2=([\\d.]+),\\s*tipo=([^,]+),\\s*instalacion=(SI|NO),\\s*total=(\\d+)\\]/i;\nconst pagarRegex   = /\\[PAGAR:\\s*numero=([^,]+),\\s*monto=(\\d+)\\]/i;\n\nconst cotizarMatch = rawText.match(cotizarRegex);\nconst pagarMatch   = rawText.match(pagarRegex);\n\n// Limpiar texto (remover marcadores de la respuesta visible)\nconst cleanText = rawText\n  .replace(cotizarRegex, '')\n  .replace(pagarRegex, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nlet action = 'NONE';\nlet actionData = null;\n\nif (cotizarMatch) {\n  action = 'COTIZAR';\n  actionData = {\n    m2: parseFloat(cotizarMatch[1]),\n    tipo: cotizarMatch[2].trim(),\n    instalacion: cotizarMatch[3].toUpperCase() === 'SI',\n    total: parseInt(cotizarMatch[4], 10)\n  };\n} else if (pagarMatch) {\n  action = 'PAGAR';\n  actionData = {\n    numero: pagarMatch[1].trim(),\n    monto: parseInt(pagarMatch[2], 10)\n  };\n}\n\nreturn [{ json: { uuid, cleanText, action, actionData, existingQuote } }];"
+        "jsCode": "// â”€â”€ Parsear respuesta de Claude â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst claudeResp = $input.first().json;\nconst prevData = $('Construir Prompt Claude').first().json;\n\nconst { uuid, existingQuote } = prevData;\n\n// Extraer texto de la respuesta\nlet rawText = '';\nif (claudeResp.content && claudeResp.content[0]) {\n  rawText = claudeResp.content[0].text || '';\n}\n\n// Detectar marcadores especiales\nconst cotizarRegex = /\\[COTIZAR:\\s*m2=([\\d.]+),\\s*tipo=([^,]+),\\s*instalacion=(SI|NO),\\s*total=(\\d+)\\]/i;\nconst pagarRegex   = /\\[PAGAR:\\s*numero=([^,]+),\\s*monto=(\\d+)\\]/i;\n\nconst cotizarMatch = rawText.match(cotizarRegex);\nconst pagarMatch   = rawText.match(pagarRegex);\n\n// Limpiar texto (remover marcadores de la respuesta visible)\nconst cleanText = rawText\n  .replace(cotizarRegex, '')\n  .replace(pagarRegex, '')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nlet action = 'NONE';\nlet actionData = null;\n\nif (cotizarMatch) {\n  action = 'COTIZAR';\n  actionData = {\n    m2: parseFloat(cotizarMatch[1]),\n    tipo: cotizarMatch[2].trim(),\n    instalacion: cotizarMatch[3].toUpperCase() === 'SI',\n    total: parseInt(cotizarMatch[4], 10)\n  };\n} else if (pagarMatch) {\n  action = 'PAGAR';\n  actionData = {\n    numero: pagarMatch[1].trim(),\n    monto: parseInt(pagarMatch[2], 10)\n  };\n}\n\nreturn [{ json: { uuid, cleanText, action, actionData, existingQuote } }];"
       },
       "id": "dee445cd-a3fc-48a2-91a8-10e1c4c3b5c8",
       "name": "Parsear Respuesta Claude",
@@ -169,7 +174,7 @@
         }
       },
       "id": "5175e91c-6d37-47e9-93b9-61b9cf3265fe",
-      "name": "Switch Acción",
+      "name": "Switch AcciÃ³n",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
       "position": [
@@ -192,17 +197,17 @@
       ],
       "credentials": {
         "redis": {
-          "id": "REDIS_CREDENTIAL_ID",
+          "id": "1B4cJUL85vbG4mJH",
           "name": "Redis - Trato Hecho"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// ── Crear objeto de cotización ───────────────────────\nconst parseData  = $('Parsear Respuesta Claude').first().json;\nconst counterVal = $input.first().json.value;\n\nconst { uuid, cleanText, actionData } = parseData;\n\n// Formatear número de cotización: COT-2026-001\nconst year = new Date().getFullYear();\nconst seq  = String(counterVal || 1).padStart(3, '0');\nconst numero = `COT-${year}-${seq}`;\n\n// Construir objeto de cotización\nconst quote = {\n  numero,\n  uuid,\n  m2:         actionData.m2,\n  tipo:       actionData.tipo,\n  instalacion: actionData.instalacion,\n  total:      actionData.total,\n  fecha:      new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }),\n  timestamp:  Date.now()\n};\n\n// Generar mensaje amigable con resumen\nconst msgInstalacion = quote.instalacion\n  ? `\\n🔧 Instalación incluida`\n  : '';\n\nconst msgFinal = cleanText +\n  `\\n\\n✅ ¡Cotización generada! Te la guardo por 10 días.\\n\\n` +\n  `📋 Número: **${quote.numero}**\\n` +\n  `📐 Metros cuadrados: ${quote.m2} m²\\n` +\n  `🌿 Producto: ${quote.tipo}` +\n  msgInstalacion +\n  `\\n💰 Total: $${quote.total.toLocaleString('es-CL')} CLP\\n\\n` +\n  `¿Deseas proceder con el pago? Solo dime y te genero el link de MercadoPago.`;\n\nreturn [{ json: { uuid, quote, message: msgFinal } }];"
+        "jsCode": "// â”€â”€ Crear objeto de cotizaciÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst parseData  = $('Parsear Respuesta Claude').first().json;\nconst counterVal = $input.first().json.value;\n\nconst { uuid, cleanText, actionData } = parseData;\n\n// Formatear nÃºmero de cotizaciÃ³n: COT-2026-001\nconst year = new Date().getFullYear();\nconst seq  = String(counterVal || 1).padStart(3, '0');\nconst numero = `COT-${year}-${seq}`;\n\n// Construir objeto de cotizaciÃ³n\nconst quote = {\n  numero,\n  uuid,\n  m2:         actionData.m2,\n  tipo:       actionData.tipo,\n  instalacion: actionData.instalacion,\n  total:      actionData.total,\n  fecha:      new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }),\n  timestamp:  Date.now()\n};\n\n// Generar mensaje amigable con resumen\nconst msgInstalacion = quote.instalacion\n  ? `\\nðŸ”§ InstalaciÃ³n incluida`\n  : '';\n\nconst msgFinal = cleanText +\n  `\\n\\nâœ… Â¡CotizaciÃ³n generada! Te la guardo por 10 dÃ­as.\\n\\n` +\n  `ðŸ“‹ NÃºmero: **${quote.numero}**\\n` +\n  `ðŸ“ Metros cuadrados: ${quote.m2} mÂ²\\n` +\n  `ðŸŒ¿ Producto: ${quote.tipo}` +\n  msgInstalacion +\n  `\\nðŸ’° Total: $${quote.total.toLocaleString('es-CL')} CLP\\n\\n` +\n  `Â¿Deseas proceder con el pago? Solo dime y te genero el link de MercadoPago.`;\n\nreturn [{ json: { uuid, quote, message: msgFinal } }];"
       },
       "id": "acb7b66d-ea24-44fd-a59c-218afef63d00",
-      "name": "Crear Cotización",
+      "name": "Crear CotizaciÃ³n",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -219,7 +224,7 @@
         "ttl": 864000
       },
       "id": "2159c742-6997-4909-bb76-108536ce4e51",
-      "name": "Guardar Cotización Redis",
+      "name": "Guardar CotizaciÃ³n Redis",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
@@ -228,21 +233,96 @@
       ],
       "credentials": {
         "redis": {
-          "id": "REDIS_CREDENTIAL_ID",
+          "id": "1B4cJUL85vbG4mJH",
           "name": "Redis - Trato Hecho"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// ── Respuesta al frontend con cotización ─────────────\nconst quoteData = $('Crear Cotización').first().json;\n\nreturn [{\n  json: {\n    message: quoteData.message,\n    quote:   quoteData.quote,\n    paymentLink: null\n  }\n}];"
+        "jsCode": "// â”€â”€ Respuesta al frontend con cotizaciÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst quoteData = $('Crear CotizaciÃ³n').first().json;\n\nreturn [{\n  json: {\n    message: quoteData.message,\n    quote:   quoteData.quote,\n    paymentLink: null\n  }\n}];"
       },
       "id": "04f84a42-0447-4923-a331-6ed794cef9cf",
-      "name": "Respuesta Cotización",
+      "name": "Respuesta CotizaciÃ³n",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         2400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "8605918152",
+        "text": "=ðŸ§¾ *Nueva CotizaciÃ³n Generada*\n\nðŸ“‹ NÃºmero: `{{ $('Crear CotizaciÃ³n').first().json.quote.numero }}`\nðŸŒ¿ Producto: {{ $('Crear CotizaciÃ³n').first().json.quote.tipo }}\nðŸ“ MÂ²: {{ $('Crear CotizaciÃ³n').first().json.quote.m2 }} mÂ²\nðŸ”§ InstalaciÃ³n: {{ $('Crear CotizaciÃ³n').first().json.quote.instalacion ? 'SÃ­' : 'No' }}\nðŸ’° Total: ${{ Number($('Crear CotizaciÃ³n').first().json.quote.total).toLocaleString('es-CL') }} CLP\nðŸ“… Fecha: {{ $('Crear CotizaciÃ³n').first().json.quote.fecha }}\nðŸ†” UUID cliente: `{{ $('Crear CotizaciÃ³n').first().json.uuid }}`",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-telegram001",
+      "name": "Telegram - Aviso CotizaciÃ³n",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        200
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-trato-hecho-001",
+          "name": "Telegram Bot - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "and.romerom@duocuc.cl",
+        "subject": "=ðŸ§¾ Nueva CotizaciÃ³n: {{ $('Crear CotizaciÃ³n').first().json.quote.numero }}",
+        "message": "=<html>\n<body style=\"font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background: #2e7d32; padding: 20px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: #fff; margin: 0; font-size: 22px;\">ðŸ§¾ Nueva CotizaciÃ³n Generada</h1>\n    <p style=\"color: #c8e6c9; margin: 5px 0 0;\">Trato Hecho - CÃ©sped SintÃ©tico SpA</p>\n  </div>\n  <div style=\"background: #f9f9f9; padding: 24px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;\">\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ“‹ NÃºmero</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;\">{{ $('Crear CotizaciÃ³n').first().json.quote.numero }}</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸŒ¿ Producto</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee;\">{{ $('Crear CotizaciÃ³n').first().json.quote.tipo }}</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ“ Metros cuadrados</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee;\">{{ $('Crear CotizaciÃ³n').first().json.quote.m2 }} mÂ²</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ”§ InstalaciÃ³n</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee;\">{{ $('Crear CotizaciÃ³n').first().json.quote.instalacion ? 'SÃ­' : 'No' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ’° Total</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; font-size: 18px; font-weight: bold; color: #2e7d32;\">${{ Number($('Crear CotizaciÃ³n').first().json.quote.total).toLocaleString('es-CL') }} CLP</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ“… Fecha</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee;\">{{ $('Crear CotizaciÃ³n').first().json.quote.fecha }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #666;\">ðŸ†” UUID Cliente</td><td style=\"padding: 8px 0; font-family: monospace; font-size: 13px;\">{{ $('Crear CotizaciÃ³n').first().json.uuid }}</td></tr>\n    </table>\n    <p style=\"margin-top: 24px; font-size: 13px; color: #999;\">Este correo fue generado automÃ¡ticamente por el sistema Trato Hecho.</p>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "gmail-node-cotizacion-001",
+      "name": "Gmail - Aviso CotizaciÃ³n",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        200
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-trato-hecho-001",
+          "name": "Gmail - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Respuesta CotizaciÃ³n').first().json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "64d1a889-080d-45cd-b7bf-af6094bc6c9a",
+      "name": "Responder Webhook (Cotizar)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        3000,
         200
       ]
     },
@@ -265,7 +345,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ items: [{ id: $json.actionData.numero, title: 'Césped Sintético SpA - ' + $json.actionData.numero, description: $json.existingQuote ? ($json.existingQuote.m2 + ' m² de ' + $json.existingQuote.tipo) : 'Pasto Sintético', quantity: 1, currency_id: 'CLP', unit_price: $json.actionData.monto }], external_reference: $json.actionData.numero, back_urls: { success: $env.FRONTEND_URL + '?pago=ok', failure: $env.FRONTEND_URL + '?pago=error', pending: $env.FRONTEND_URL + '?pago=pendiente' }, auto_return: 'approved', statement_descriptor: 'CESPED SINTETICO SPA' }) }}",
+        "jsonBody": "={{ JSON.stringify({ items: [{ id: $json.actionData.numero, title: 'CÃ©sped SintÃ©tico SpA - ' + $json.actionData.numero, description: $json.existingQuote ? ($json.existingQuote.m2 + ' mÂ² de ' + $json.existingQuote.tipo) : 'Pasto SintÃ©tico', quantity: 1, currency_id: 'CLP', unit_price: $json.actionData.monto }], external_reference: $json.actionData.numero, back_urls: { success: $env.FRONTEND_URL + '?pago=ok', failure: $env.FRONTEND_URL + '?pago=error', pending: $env.FRONTEND_URL + '?pago=pendiente' }, auto_return: 'approved', statement_descriptor: 'CESPED SINTETICO SPA' }) }}",
         "options": {
           "timeout": 15000
         }
@@ -281,7 +361,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Respuesta al frontend con link de pago ───────────\nconst mpResp = $input.first().json;\nconst parseData = $('Parsear Respuesta Claude').first().json;\n\nconst paymentLink = mpResp.init_point || mpResp.sandbox_init_point || null;\n\nconst message = parseData.cleanText +\n  (paymentLink\n    ? `\\n\\n💳 ¡Listo! Aquí está tu link de pago para la cotización **${parseData.actionData.numero}**:\\n\\nHaz clic en el botón de abajo para pagar de forma segura con MercadoPago.`\n    : `\\n\\nHubo un problema al generar el link de pago. Por favor contáctanos directamente.`);\n\nreturn [{\n  json: {\n    message,\n    quote: parseData.existingQuote || null,\n    paymentLink\n  }\n}];"
+        "jsCode": "// â”€â”€ Respuesta al frontend con link de pago â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst mpResp = $input.first().json;\nconst parseData = $('Parsear Respuesta Claude').first().json;\n\nconst paymentLink = mpResp.init_point || mpResp.sandbox_init_point || null;\n\nconst message = parseData.cleanText +\n  (paymentLink\n    ? `\\n\\nðŸ’³ Â¡Listo! AquÃ­ estÃ¡ tu link de pago para la cotizaciÃ³n **${parseData.actionData.numero}**:\\n\\nHaz clic en el botÃ³n de abajo para pagar de forma segura con MercadoPago.`\n    : `\\n\\nHubo un problema al generar el link de pago. Por favor contÃ¡ctanos directamente.`);\n\nreturn [{\n  json: {\n    message,\n    quote: parseData.existingQuote || null,\n    paymentLink,\n    actionData: parseData.actionData\n  }\n}];"
       },
       "id": "15f1b067-297e-466f-b935-70b56a478db3",
       "name": "Respuesta Pago",
@@ -294,49 +374,55 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Respuesta simple (sin acción especial) ───────────\nconst parseData = $input.first().json;\n\nreturn [{\n  json: {\n    message: parseData.cleanText,\n    quote: parseData.existingQuote || null,\n    paymentLink: null\n  }\n}];"
-      },
-      "id": "f1894916-3b80-410c-849f-ece1a5eb40c2",
-      "name": "Respuesta Simple",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1740,
-        600
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Access-Control-Allow-Origin",
-                "value": "*"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          }
+        "chatId": "8605918152",
+        "text": "=ðŸ’³ *Â¡Nueva Venta / Pago Iniciado!*\n\nðŸ“‹ CotizaciÃ³n: `{{ $json.actionData.numero }}`\nðŸ’° Monto: ${{ Number($json.actionData.monto).toLocaleString('es-CL') }} CLP\nðŸ”— Link de pago: {{ $json.paymentLink || 'No disponible' }}\nðŸ“… Fecha: {{ new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
         }
       },
-      "id": "64d1a889-080d-45cd-b7bf-af6094bc6c9a",
-      "name": "Responder Webhook (Cotizar)",
-      "type": "n8n-nodes-base.respondToWebhook",
+      "id": "b2c3d4e5-f6a7-8901-bcde-telegram002",
+      "name": "Telegram - Aviso Venta",
+      "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
       "position": [
-        2600,
-        200
-      ]
+        2180,
+        400
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-trato-hecho-001",
+          "name": "Telegram Bot - Trato Hecho"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "and.romerom@duocuc.cl",
+        "subject": "=ðŸ’³ Nueva Venta Iniciada: {{ $('Respuesta Pago').first().json.actionData.numero }}",
+        "message": "=<html>\n<body style=\"font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background: #1565c0; padding: 20px; border-radius: 8px 8px 0 0;\">\n    <h1 style=\"color: #fff; margin: 0; font-size: 22px;\">ðŸ’³ Nueva Venta / Pago Iniciado</h1>\n    <p style=\"color: #bbdefb; margin: 5px 0 0;\">Trato Hecho - CÃ©sped SintÃ©tico SpA</p>\n  </div>\n  <div style=\"background: #f9f9f9; padding: 24px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px;\">\n    <table style=\"width: 100%; border-collapse: collapse;\">\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ“‹ CotizaciÃ³n</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;\">{{ $('Respuesta Pago').first().json.actionData.numero }}</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ’° Monto</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; font-size: 18px; font-weight: bold; color: #1565c0;\">${{ Number($('Respuesta Pago').first().json.actionData.monto).toLocaleString('es-CL') }} CLP</td></tr>\n      <tr><td style=\"padding: 8px 0; border-bottom: 1px solid #eee; color: #666;\">ðŸ”— Link de pago</td><td style=\"padding: 8px 0; border-bottom: 1px solid #eee;\"><a href=\"{{ $('Respuesta Pago').first().json.paymentLink }}\" style=\"color: #1565c0;\">{{ $('Respuesta Pago').first().json.paymentLink || 'No disponible' }}</a></td></tr>\n      <tr><td style=\"padding: 8px 0; color: #666;\">ðŸ“… Fecha</td><td style=\"padding: 8px 0;\">{{ new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</td></tr>\n    </table>\n    <p style=\"margin-top: 24px; font-size: 13px; color: #999;\">Este correo fue generado automÃ¡ticamente por el sistema Trato Hecho.</p>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "gmail-node-venta-002",
+      "name": "Gmail - Aviso Venta",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        400
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-trato-hecho-001",
+          "name": "Gmail - Trato Hecho"
+        }
+      }
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
+        "responseBody": "={{ JSON.stringify($('Respuesta Pago').first().json) }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -357,8 +443,21 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        2180,
+        2600,
         400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// â”€â”€ Respuesta simple (sin acciÃ³n especial) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nconst parseData = $input.first().json;\n\nreturn [{\n  json: {\n    message: parseData.cleanText,\n    quote: parseData.existingQuote || null,\n    paymentLink: null\n  }\n}];"
+      },
+      "id": "f1894916-3b80-410c-849f-ece1a5eb40c2",
+      "name": "Respuesta Simple",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        600
       ]
     },
     {
@@ -406,14 +505,14 @@
       "main": [
         [
           {
-            "node": "Obtener Cotización Redis",
+            "node": "Obtener CotizaciÃ³n Redis",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Obtener Cotización Redis": {
+    "Obtener CotizaciÃ³n Redis": {
       "main": [
         [
           {
@@ -450,14 +549,14 @@
       "main": [
         [
           {
-            "node": "Switch Acción",
+            "node": "Switch AcciÃ³n",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Switch Acción": {
+    "Switch AcciÃ³n": {
       "main": [
         [
           {
@@ -486,44 +585,65 @@
       "main": [
         [
           {
-            "node": "Crear Cotización",
+            "node": "Crear CotizaciÃ³n",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Crear Cotización": {
+    "Crear CotizaciÃ³n": {
       "main": [
         [
           {
-            "node": "Guardar Cotización Redis",
+            "node": "Guardar CotizaciÃ³n Redis",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Guardar Cotización Redis": {
+    "Guardar CotizaciÃ³n Redis": {
       "main": [
         [
           {
-            "node": "Respuesta Cotización",
+            "node": "Respuesta CotizaciÃ³n",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Respuesta Cotización": {
+    "Respuesta CotizaciÃ³n": {
       "main": [
         [
           {
             "node": "Responder Webhook (Cotizar)",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Telegram - Aviso CotizaciÃ³n",
+            "type": "main",
+            "index": 0
           }
         ]
+      ]
+    },
+    "Telegram - Aviso CotizaciÃ³n": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Aviso CotizaciÃ³n",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Aviso CotizaciÃ³n": {
+      "main": [
+        []
       ]
     },
     "Llamar MercadoPago": {
@@ -544,8 +664,29 @@
             "node": "Responder Webhook (Pagar)",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Telegram - Aviso Venta",
+            "type": "main",
+            "index": 0
           }
         ]
+      ]
+    },
+    "Telegram - Aviso Venta": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Aviso Venta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Aviso Venta": {
+      "main": [
+        []
       ]
     },
     "Respuesta Simple": {
@@ -560,23 +701,56 @@
       ]
     }
   },
-  "id": "8726be75-0ef1-4125-9c85-f97008eef9bb",
-  "active": false,
   "settings": {
     "executionOrder": "v1",
     "saveManualExecutions": true,
     "saveExecutionProgress": false,
     "errorWorkflow": ""
   },
+  "staticData": null,
   "meta": {
     "instanceId": "trato-hecho-instance"
   },
+  "pinData": null,
+  "versionId": "5ca76746-62ad-420d-ac1e-66bf5a6e3071",
+  "activeVersionId": "5ca76746-62ad-420d-ac1e-66bf5a6e3071",
+  "versionCounter": 29,
+  "triggerCount": 1,
   "tags": [
     {
+      "updatedAt": "2026-03-28T13:23:08.567Z",
+      "createdAt": "2026-03-28T13:23:08.567Z",
+      "id": "JL63ldyzA1UQlelo",
       "name": "trato-hecho"
     },
     {
+      "updatedAt": "2026-03-28T13:23:08.570Z",
+      "createdAt": "2026-03-28T13:23:08.570Z",
+      "id": "nnzNct4HPQf6Xwta",
       "name": "chat-agent"
     }
-  ]
+  ],
+  "shared": [
+    {
+      "updatedAt": "2026-03-28T14:22:17.987Z",
+      "createdAt": "2026-03-28T14:22:17.987Z",
+      "role": "workflow:owner",
+      "workflowId": "8726be75-0ef1-4125-9c85-f97008eef9bb",
+      "projectId": "WFAsewOsXFDwGJWF",
+      "project": {
+        "updatedAt": "2026-03-28T13:04:48.870Z",
+        "createdAt": "2026-03-28T13:01:08.818Z",
+        "id": "WFAsewOsXFDwGJWF",
+        "name": "Gonzalo ghon.cbr@gmail.com <ghon.cbr@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "b4851c5e-a89a-4984-af61-213ba884aaeb"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Version ec091c18",
+    "description": ""
+  }
 }
